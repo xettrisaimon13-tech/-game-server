@@ -3,19 +3,17 @@ const http = require('http');
 
 const server = http.createServer((req, res) => {
     res.writeHead(200);
-    res.end('Game Server Running');
+    res.end('OK');
 });
 
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocketServer({ server });
 
 let players = {};
-let matchmaking_queue = [];
+let queue = [];
 const MATCH_SIZE = 2;
 
-server.listen(PORT, () => {
-    console.log('Server running on port ' + PORT);
-});
+server.listen(PORT, () => console.log('Server on port ' + PORT));
 
 wss.on('connection', (ws) => {
     let my_id = null;
@@ -24,48 +22,35 @@ wss.on('connection', (ws) => {
         let msg;
         try { msg = JSON.parse(raw); } catch { return; }
 
-        switch (msg.type) {
-            case 'register':
-                my_id = msg.player_id;
-                players[my_id] = { ws, name: msg.name, player_id: my_id };
-                break;
-            case 'find_match':
-                if (!matchmaking_queue.includes(my_id)) {
-                    matchmaking_queue.push(my_id);
-                }
-                check_match();
-                break;
-            case 'cancel_match':
-                matchmaking_queue = matchmaking_queue.filter(id => id !== my_id);
-                break;
-            case 'host_room':
-                ws.send(JSON.stringify({ type: 'room_created', room_code: my_id }));
-                break;
-            case 'join_room':
-                const host = Object.values(players).find(p => p.player_id === msg.room_code);
-                if (host) {
-                    ws.send(JSON.stringify({ type: 'join_success' }));
-                } else {
-                    ws.send(JSON.stringify({ type: 'join_failed', reason: 'Room bhethiyena!' }));
-                }
-                break;
+        if (msg.type === 'register') {
+            my_id = msg.player_id;
+            players[my_id] = { ws, name: msg.name };
+            console.log('Joined: ' + msg.name + ' [' + my_id + ']');
+        }
+
+        if (msg.type === 'find_match') {
+            if (!queue.includes(my_id)) queue.push(my_id);
+            console.log('Queue: ' + queue.length + '/' + MATCH_SIZE);
+            if (queue.length >= MATCH_SIZE) {
+                const room = queue.splice(0, MATCH_SIZE);
+                const room_id = Date.now().toString(36).toUpperCase();
+                room.forEach(pid => {
+                    players[pid]?.ws.send(JSON.stringify({
+                        type: 'match_found',
+                        room_id: room_id,
+                        players: room
+                    }));
+                });
+                console.log('Match found! Room: ' + room_id);
+            }
         }
     });
 
     ws.on('close', () => {
         if (my_id) {
             delete players[my_id];
-            matchmaking_queue = matchmaking_queue.filter(id => id !== my_id);
+            queue = queue.filter(id => id !== my_id);
+            console.log('Left: ' + my_id);
         }
     });
 });
-
-function check_match() {
-    if (matchmaking_queue.length >= MATCH_SIZE) {
-        const room = matchmaking_queue.splice(0, MATCH_SIZE);
-        const room_id = Date.now().toString(36).toUpperCase();
-        room.forEach(pid => {
-            players[pid]?.ws.send(JSON.stringify({ type: 'match_found', room_id, players: room }));
-        });
-    }
-}
