@@ -61,10 +61,11 @@ wss.on('connection', (ws) => {
         ws, id: playerId,
         name: 'Player' + playerId,
         roomName: null,
-        identity: ''
+        identity: '',
+        micOn: false
     };
     players.set(playerId, player);
-    log('CONNECT', 'Voice player connected -> id=' + playerId);
+    log('CONNECT', 'Player connected -> id=' + playerId + ' total=' + players.size);
     sendTo(ws, { type: 'welcome', player_id: playerId });
 
     ws.on('message', (raw) => {
@@ -84,6 +85,7 @@ wss.on('connection', (ws) => {
                     if (oldRoom) {
                         oldRoom.players = oldRoom.players.filter(pl => pl.id !== playerId);
                         broadcastToRoom(p.roomName, { type: 'player_left', player_id: playerId });
+                        log('LEAVE', p.name + ' left voice room "' + p.roomName + '"');
                         if (oldRoom.players.length === 0) {
                             rooms.delete(p.roomName);
                             log('ROOM', 'Voice room "' + p.roomName + '" destroyed (empty)');
@@ -116,7 +118,7 @@ wss.on('connection', (ws) => {
                     name: p.name
                 }, ws);
 
-                log('JOIN', p.name + ' joined voice room "' + roomName + '" (' + room.players.length + ' players)');
+                log('JOIN', '*** ' + p.name + ' (id=' + playerId + ') joined voice room "' + roomName + '" [' + room.players.length + ' players] ***');
                 break;
             }
 
@@ -132,6 +134,9 @@ wss.on('connection', (ws) => {
 
             case 'mic_state': {
                 if (!p.roomName) break;
+                p.micOn = msg.on;
+                const state = msg.on ? 'ON' : 'OFF';
+                log('MIC', '*** ' + p.name + ' (id=' + playerId + ') mic ' + state + ' in room "' + p.roomName + '" ***');
                 broadcastToRoom(p.roomName, {
                     type: 'mic_state',
                     player_id: playerId,
@@ -155,13 +160,14 @@ wss.on('connection', (ws) => {
                 if (room) {
                     room.players = room.players.filter(pl => pl.id !== playerId);
                     broadcastToRoom(p.roomName, { type: 'player_left', player_id: playerId });
+                    log('LEAVE', p.name + ' disconnected from voice room "' + p.roomName + '" [' + room.players.length + ' remaining]');
                     if (room.players.length === 0) {
                         rooms.delete(p.roomName);
                         log('ROOM', 'Voice room "' + p.roomName + '" destroyed (empty)');
                     }
                 }
             }
-            log('DISCONNECT', p.name + ' disconnected from voice (id=' + playerId + ')');
+            log('DISCONNECT', p.name + ' (id=' + playerId + ') disconnected total=' + (players.size - 1));
             players.delete(playerId);
         }
     });
